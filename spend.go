@@ -1,5 +1,11 @@
 /*
+** spend.go
+** 
+** cs4501 Fall 2015
+** Problem Set 1
+*/
 
+/*
 For this program to execute correctly the following needs to be provided:
 
 - An internet connection
@@ -29,20 +35,20 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/btcsuite/btcec"
-	"github.com/btcsuite/btcnet"
-	"github.com/btcsuite/btcscript"
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcutil"
-	"github.com/btcsuite/btcwire"
+	"github.com/btcsuite/btcd/wire"
 )
 
-var a = flag.String("address", "", "The address to send Bitcoin to.")
+var a = flag.String("toaddress", "", "The address to send Bitcoin to.")
 var k = flag.String("privkey", "", "The private key of the input tx.")
 var t = flag.String("txid", "", "The transaction id corresponding to the funding Bitcoin transaction.")
 var v = flag.Int("vout", -1, "The index into the funding transaction.")
 
 type requiredArgs struct {
-	txid      *btcwire.ShaHash
+	txid      *wire.ShaHash
 	vout      uint32
 	toAddress btcutil.Address
 	privKey   *btcec.PrivateKey
@@ -53,10 +59,10 @@ type requiredArgs struct {
 func getArgs() requiredArgs {
 	flag.Parse()
 	if *a == "" || *k == "" || *t == "" || *v == -1 {
-		fmt.Println("\nThis tool generates a bitcoin transaction that moves coins from an input to an output.\n" +
-			"You must provide a key, an address, a transaction id (the hash\n" +
+		fmt.Println("\nThis program generates a bitcoin transaction that moves coins from an input to an output.\n" +
+			"You must provide a key, a receiving address, a transaction id (the hash\n" +
 			"of a tx) and the index into the outputs of that tx that fund your\n" +
-			"address! Use http://blockchain.info/pushtx to send the raw transaction.\n")
+			"address. Use http://blockchain.info/pushtx to send the raw transaction.\n")
 		flag.PrintDefaults()
 		fmt.Println("")
 		os.Exit(0)
@@ -68,12 +74,12 @@ func getArgs() requiredArgs {
 	}
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), pkBytes)
 
-	addr, err := btcutil.DecodeAddress(*a, &btcnet.MainNetParams)
+	addr, err := btcutil.DecodeAddress(*a, &chaincfg.MainNetParams)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	txid, err := btcwire.NewShaHashFromStr(*t)
+	txid, err := wire.NewShaHashFromStr(*t)
 
 	args := requiredArgs{
 		txid:      txid,
@@ -98,7 +104,7 @@ type blockChainInfoTx struct {
 
 // Uses the txid of the target funding transaction and asks blockchain.info's
 // api for information (in json) relaated to that transaction.
-func lookupTxid(hash *btcwire.ShaHash) *blockChainInfoTx {
+func lookupTxid(hash *wire.ShaHash) *blockChainInfoTx {
 
 	url := "https://blockchain.info/rawtx/" + hash.String()
 	resp, err := http.Get(url)
@@ -128,10 +134,10 @@ func lookupTxid(hash *btcwire.ShaHash) *blockChainInfoTx {
 // getFundingParams pulls the relevant transaction information from the json returned by blockchain.info
 // To generate a new valid transaction all of the parameters of the TxOut we are
 // spending from must be used.
-func getFundingParams(rawtx *blockChainInfoTx, vout uint32) (*btcwire.TxOut, *btcwire.OutPoint) {
+func getFundingParams(rawtx *blockChainInfoTx, vout uint32) (*wire.TxOut, *wire.OutPoint) {
 	blkChnTxOut := rawtx.Outputs[vout]
 
-	hash, err := btcwire.NewShaHashFromStr(rawtx.Hash)
+	hash, err := wire.NewShaHashFromStr(rawtx.Hash)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -143,14 +149,14 @@ func getFundingParams(rawtx *blockChainInfoTx, vout uint32) (*btcwire.TxOut, *bt
 		log.Fatal(err)
 	}
 
-	outpoint := btcwire.NewOutPoint(hash, vout)
+	outpoint := wire.NewOutPoint(hash, vout)
 
 	subscript, err := hex.DecodeString(blkChnTxOut.ScriptHex)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	oldTxOut := btcwire.NewTxOut(int64(amnt), subscript)
+	oldTxOut := wire.NewTxOut(int64(amnt), subscript)
 
 	return oldTxOut, outpoint
 }
@@ -166,7 +172,7 @@ func main() {
 	oldTxOut, outpoint := getFundingParams(rawFundingTx, reqArgs.vout)
 
 	// Formulate a new transaction from the provided parameters
-	tx := btcwire.NewMsgTx()
+	tx := wire.NewMsgTx()
 
 	// Create the TxIn
 	txin := createTxIn(outpoint)
@@ -189,10 +195,10 @@ func main() {
 
 // createTxIn pulls the outpoint out of the funding TxOut and uses it as a reference
 // for the txin that will be placed in a new transaction.
-func createTxIn(outpoint *btcwire.OutPoint) *btcwire.TxIn {
+func createTxIn(outpoint *wire.OutPoint) *wire.TxIn {
 	// The second arg is the txin's signature script, which we are leaving empty
 	// until the entire transaction is ready.
-	txin := btcwire.NewTxIn(outpoint, []byte{})
+	txin := wire.NewTxIn(outpoint, []byte{})
 	return txin
 }
 
@@ -200,29 +206,29 @@ func createTxIn(outpoint *btcwire.OutPoint) *btcwire.TxIn {
 // every coin in the txin to the target address, a fee 10,000 Satoshi is set aside.
 // If this fee is left out then, nodes on the network will ignore the transaction,
 // since they would otherwise be providing you a service for free.
-func createTxOut(inCoin int64, addr btcutil.Address) *btcwire.TxOut {
+func createTxOut(inCoin int64, addr btcutil.Address) *wire.TxOut {
 	// Pay the minimum network fee so that nodes will broadcast the tx.
 	outCoin := inCoin - 10000
 	// Take the address and generate a PubKeyScript out of it
-	script, err := btcscript.PayToAddrScript(addr)
+	script, err := txscript.PayToAddrScript(addr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	txout := btcwire.NewTxOut(outCoin, script)
+	txout := wire.NewTxOut(outCoin, script)
 	return txout
 }
 
 // generateSig requires a transaction, a private key, and the bytes of the raw
 // scriptPubKey. It will then generate a signature over all of the outputs of
 // the provided tx. This is the last step of creating a valid transaction.
-func generateSig(tx *btcwire.MsgTx, privkey *btcec.PrivateKey, scriptPubKey []byte) []byte {
+func generateSig(tx *wire.MsgTx, privkey *btcec.PrivateKey, scriptPubKey []byte) []byte {
 
 	// The all important signature. Each input is documented below.
-	scriptSig, err := btcscript.SignatureScript(
+	scriptSig, err := txscript.SignatureScript(
 		tx,                   // The tx to be signed.
 		0,                    // The index of the txin the signature is for.
 		scriptPubKey,         // The other half of the script from the PubKeyHash.
-		btcscript.SigHashAll, // The signature flags that indicate what the sig covers.
+		txscript.SigHashAll,  // The signature flags that indicate what the sig covers.
 		privkey,              // The key to generate the signature with.
 		true,                 // The compress sig flag. This saves space on the blockchain.
 	)
@@ -237,7 +243,7 @@ func generateSig(tx *btcwire.MsgTx, privkey *btcec.PrivateKey, scriptPubKey []by
 // format that Bitcoin wire's protocol accepts, so you could connect to a node,
 // send them these bytes, and if the tx was valid, the node would forward the
 // tx through the network.
-func dumpHex(tx *btcwire.MsgTx) {
+func dumpHex(tx *wire.MsgTx) {
 	buf := bytes.NewBuffer(make([]byte, 0, tx.SerializeSize()))
 	tx.Serialize(buf)
 	hexstr := hex.EncodeToString(buf.Bytes())
@@ -251,7 +257,7 @@ type sendTxJson struct {
 
 // broadcastTx tries to send the transaction using an api that will broadcast
 // a submitted transaction on behalf of the user.
-func broadcastTx(tx *btcwire.MsgTx) {
+func broadcastTx(tx *wire.MsgTx) {
 	buf := bytes.NewBuffer(make([]byte, 0, tx.SerializeSize()))
 	tx.Serialize(buf)
 	hexstr := hex.EncodeToString(buf.Bytes())

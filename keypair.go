@@ -1,3 +1,10 @@
+/*
+** keypair.go
+**
+** cs4501 Fall 2015
+** Problem Set 1
+*/
+
 // Every file in go is a part of some package. Since we want to create a program
 // from this file we use 'package main'
 package main
