@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/btcsuite/btcec"
-	"github.com/btcsuite/btcnet"
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 )
 
@@ -35,7 +35,7 @@ func generateKeyPair() (*btcec.PublicKey, *btcec.PrivateKey) {
 // shimmy the hashed bytes into btcsuite's AddressPubKeyHash type
 func generateAddr(pub *btcec.PublicKey) *btcutil.AddressPubKeyHash {
 
-	net := &btcnet.MainNetParams
+	net := &chaincfg.MainNetParams
 
 	// Serialize the public key into bytes and then run ripemd160(sha256(b)) on it
 	b := btcutil.Hash160(pub.SerializeCompressed())
